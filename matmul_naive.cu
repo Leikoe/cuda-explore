@@ -41,7 +41,7 @@ __global__ void matmul(float *a, float *b, float *c, int n)
 
 int main()
 {
-     srand(time(NULL));
+    srand(time(NULL));
 
     float *a = (float *)malloc(N * N * sizeof(float));
     float *b = (float *)malloc(N * N * sizeof(float));

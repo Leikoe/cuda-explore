@@ -1,6 +1,40 @@
 #include <stdio.h>
 #include <time.h>
 #include <stdint.h>
+#include <assert.h>
+#include <bits/stdc++.h>
+
+using namespace std;
+
+void CudaDeviceInfo() {
+  int deviceId;
+
+  cudaGetDevice(&deviceId);
+
+  cudaDeviceProp props{};
+  cudaGetDeviceProperties(&props, deviceId);
+
+  printf("Device ID: %d\n\
+    Name: %s\n\
+    Compute Capability: %d.%d\n\
+    memoryBusWidth: %d\n\
+    maxThreadsPerBlock: %d\n\
+    maxThreadsPerMultiProcessor: %d\n\
+    maxRegsPerBlock: %d\n\
+    maxRegsPerMultiProcessor: %d\n\
+    totalGlobalMem: %zuMB\n\
+    sharedMemPerBlock: %zuKB\n\
+    sharedMemPerMultiprocessor: %zuKB\n\
+    totalConstMem: %zuKB\n\
+    multiProcessorCount: %d\n\
+    Warp Size: %d\n",
+         deviceId, props.name, props.major, props.minor, props.memoryBusWidth,
+         props.maxThreadsPerBlock, props.maxThreadsPerMultiProcessor,
+         props.regsPerBlock, props.regsPerMultiprocessor,
+         props.totalGlobalMem / 1024 / 1024, props.sharedMemPerBlock / 1024,
+         props.sharedMemPerMultiprocessor / 1024, props.totalConstMem / 1024,
+         props.multiProcessorCount, props.warpSize);
+};
 
 uint64_t nanos()
 {
@@ -33,10 +67,9 @@ __global__ void matmul(float *a, float *b, float *c, int n)
 	__shared__ float tile_b[BLOCK_SIZE * BLOCK_SIZE];
 
     float acc = 0.0f;
-
     for (int block_start_i = 0; block_start_i < n; block_start_i += BLOCK_SIZE)
     {
-		tile_a[thread_i * BLOCK_SIZE + thread_j] = a[(block_start_i + thread_i) * n + col];
+		tile_a[thread_i * BLOCK_SIZE + thread_j] = a[row * n + (block_start_i + thread_j)];
 		tile_b[thread_i * BLOCK_SIZE + thread_j] = b[(block_start_i + thread_i) * n + col];
 		
 		__syncthreads();  // wait for all the threads in the warp to load their item of the block into the block (smem)
@@ -54,6 +87,10 @@ __global__ void matmul(float *a, float *b, float *c, int n)
 
 int main()
 {
+    srand(time(NULL));
+
+    CudaDeviceInfo();
+
     float *a = (float *)malloc(N * N * sizeof(float));
     float *b = (float *)malloc(N * N * sizeof(float));
     float *c = (float *)malloc(N * N * sizeof(float));
@@ -66,8 +103,8 @@ int main()
     // fill a & b and zero out c
     for (int i = 0; i < (N * N); i++)
     {
-        a[i] = 1.0f;
-        b[i] = 2.0f;
+        a[i] = ((double)rand()) / INT_MAX;
+        b[i] = ((double)rand()) / INT_MAX;
         c[i] = 0.0f;
     }
 
@@ -113,7 +150,7 @@ int main()
 		{
 			for (int j = 0; j < N; j++)
 			{
-				if (c[i * N + j] != reference_c[i * N + j])
+				if (reference_c[i * N + j] - c[i * N + j] > 1e-3)
 				{
 					printf("ERROR at i=%d j=%d (should be %f, is %f)\n", i, j, reference_c[i * N + j], c[i * N + j]);
 					exit(1);
