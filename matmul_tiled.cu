@@ -12,16 +12,19 @@ uint64_t nanos()
 #define N 1024
 #define CEIL_DIV(a,b) ((a+b-1)/b)
 #define WARP_SIZE 32
-#define BLOCK_SIZE 16
+#define BLOCK_SIZE 32
 
 __global__ void matmul(float *a, float *b, float *c, int n)
 {
-	int row = blockIdx.y;
-	int col = blockIdx.x;
-    int thread_row = threadIdx.x / n;
-    int thread_col = threadIdx.x % n;
+	int block_i = blockIdx.y;  // block index along row (y) axis
+	int block_j = blockIdx.x;  // block index along col (x) axis
+    int thread_i = threadIdx.x / BLOCK_SIZE;  // thread item y index inside the 32x32 block
+    int thread_j = threadIdx.x % BLOCK_SIZE;  // thread item x index inside the 32x32 block
 
-    if (row * blockDim.y + thread_row >= n or col * blockDim.x + thread_col)
+	int row = block_i * BLOCK_SIZE + thread_i;
+	int col = block_j * BLOCK_SIZE + thread_j;
+
+    if (row >= n or col >= n)
     {
         return;
     }
@@ -30,18 +33,16 @@ __global__ void matmul(float *a, float *b, float *c, int n)
 	__shared__ float tile_b[BLOCK_SIZE * BLOCK_SIZE];
 
     float acc = 0.0f;
-    for (int block_idx = 0; block_idx < n; block_idx+=BLOCK_SIZE)
+
+    for (int block_start_i = 0; block_start_i < n; block_start_i += BLOCK_SIZE)
     {
-		tile_a[thread_row * BLOCK_SIZE + thread_col] = a[row * n + col];
-		tile_b[thread_row * BLOCK_SIZE + thread_col] = b[row * n + col];
+		tile_a[thread_i * BLOCK_SIZE + thread_j] = a[(block_start_i + thread_i) * n + col];
+		tile_b[thread_i * BLOCK_SIZE + thread_j] = b[(block_start_i + thread_i) * n + col];
 		
 		__syncthreads();  // wait for all the threads in the warp to load their item of the block into the block (smem)
 
-		a += block_idx * BLOCK_SIZE * n;
-		b += block_idx * BLOCK_SIZE * n;
-
 		for (int k = 0; k < BLOCK_SIZE; k++) {
-			acc += tile_a[thread_row * BLOCK_SIZE + k] * tile_b[k * BLOCK_SIZE + thread_col];
+			acc += tile_a[thread_i * BLOCK_SIZE + k] * tile_b[k * BLOCK_SIZE + thread_j];
 		}
 
 		__syncthreads();  // we don't want to change the tiles in smem while some threads are still accumulating
