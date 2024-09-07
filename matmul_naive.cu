@@ -7,7 +7,7 @@
 
 #define N 1024
 
-__global__ void matmul(__half *a, __half *b, __half *c, int n)
+__global__ void matmul(__half *a, __half *b, float *c, int n)
 {
     int thread_id_x = blockIdx.x * blockDim.x + threadIdx.x;
     int thread_id_y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -17,10 +17,10 @@ __global__ void matmul(__half *a, __half *b, __half *c, int n)
         return;
     }
 
-    __half acc = 0.0f;
+    float acc = 0.0f;
     for (int k = 0; k < n; k++)
     {
-        acc = __hfma(a[thread_id_y * n + k], b[k * n + thread_id_x], acc);
+        acc = __half2float(__hmul(a[thread_id_y * n + k], b[k * n + thread_id_x])) + acc;
     }
 
     c[thread_id_y * n + thread_id_x] = acc;
@@ -34,26 +34,24 @@ int main()
     float *b = (float *)malloc(N * N * sizeof(float));
     float *c = (float *)malloc(N * N * sizeof(float));
 
+    // fill a & b
+    matrix_random(a, N * N);
+    matrix_random(b, N * N);
+
     __half *a_h = (__half *)malloc(N * N * sizeof(__half));
     __half *b_h = (__half *)malloc(N * N * sizeof(__half));
-    __half *c_h = (__half *)malloc(N * N * sizeof(__half));
-
-    __half *d_a, *d_b, *d_c;
-    cudaMalloc(&d_a, N * N * sizeof(__half));
-    cudaMalloc(&d_b, N * N * sizeof(__half));
-    cudaMalloc(&d_c, N * N * sizeof(__half));
-
-    // fill a & b and zero out c
-    matrix_random(a, N);
-    matrix_random(b, N);
-    matrix_zeros(c, N);
 
     for (int i = 0; i < N * N; i++)
     {
-        a_h[i] = __half2float(a[i]);
-        b_h[i] = __half2float(b[i]);
+        a_h[i] = __float2half(a[i]);
+        b_h[i] = __float2half(b[i]);
     }
 
+    __half *d_a, *d_b;
+    float *d_c;
+    cudaMalloc(&d_a, N * N * sizeof(__half));
+    cudaMalloc(&d_b, N * N * sizeof(__half));
+    cudaMalloc(&d_c, N * N * sizeof(float));
     cudaMemcpy(d_a, a_h, N * N * sizeof(__half), cudaMemcpyHostToDevice);
     cudaMemcpy(d_b, b_h, N * N * sizeof(__half), cudaMemcpyHostToDevice);
 
@@ -66,11 +64,7 @@ int main()
     cudaDeviceSynchronize();
     uint64_t end = nanos();
 
-    cudaMemcpy(c_h, d_c, N * N * sizeof(__half), cudaMemcpyDeviceToHost);
-    for (int i = 0; i < N * N; i++)
-    {
-        c[i] = __half2float(c_h[i]);
-    }
+    cudaMemcpy(c, d_c, N * N * sizeof(float), cudaMemcpyDeviceToHost);
 
     double gflop = (2.0 * N * N * N) * 1e-9;
     double s = (end - start) * 1e-9;
@@ -94,7 +88,6 @@ int main()
     cudaFree(d_c);
     free(a_h);
     free(b_h);
-    free(c_h);
     free(a);
     free(b);
     free(c);
