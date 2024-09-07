@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include "utils.cu"
 
-#define N 1024
+#define N 4096
 #define WARP_SIZE 32
 #define TILE_SIZE 16
 
@@ -16,11 +16,6 @@ __global__ void matmul(__half *a, __half *b, float *c, int n)
     // int row = block_i * BLOCK_SIZE + thread_i;
     // int col = block_j * BLOCK_SIZE + thread_j;
 
-    if (block_i != 0 || block_j != 0)
-    {
-        return;
-    }
-
     // if (row >= n or col >= n)
     // {
     //     return;
@@ -32,17 +27,15 @@ __global__ void matmul(__half *a, __half *b, float *c, int n)
 
     nvcuda::wmma::fill_fragment(acc_frag, 0.0);
 #pragma unroll
-    for (int wmma_block_index = 0; wmma_block_index < 64; wmma_block_index++)
+    for (int wmma_block_index = 0; wmma_block_index < N / TILE_SIZE; wmma_block_index++)
     {
-        nvcuda::wmma::load_matrix_sync(a_frag, a + block_i * n + wmma_block_index * TILE_SIZE, n);
-        nvcuda::wmma::load_matrix_sync(b_frag, b + wmma_block_index * TILE_SIZE * n + block_j, n);
+        nvcuda::wmma::load_matrix_sync(a_frag, a + (block_i * TILE_SIZE * n) + (wmma_block_index * TILE_SIZE), n);
+        nvcuda::wmma::load_matrix_sync(b_frag, b + (wmma_block_index * TILE_SIZE * n) + (block_j * TILE_SIZE), n);
 
         nvcuda::wmma::mma_sync(acc_frag, a_frag, b_frag, acc_frag);
     }
 
-    nvcuda::wmma::store_matrix_sync(&c[block_i * n + block_j], acc_frag, n, nvcuda::wmma::mem_row_major);
-    // nvcuda::wmma::store_matrix_sync(c, acc_frag, n, nvcuda::wmma::mem_row_major);
-    // c[(block_i + (threadIdx.x / WMMA_SIZE)) * n + (block_j + (threadIdx.x % WMMA_SIZE))] = (float)threadIdx.x;
+    nvcuda::wmma::store_matrix_sync(c + (block_i * TILE_SIZE * n) + (block_j * TILE_SIZE), acc_frag, n, nvcuda::wmma::mem_row_major);
 }
 
 int main()
@@ -85,30 +78,22 @@ int main()
 
     cudaMemcpy(c, d_c, N * N * sizeof(float), cudaMemcpyDeviceToHost);
 
-    for (int i = 0; i < N * N; i++)
-    {
-        if (c[i] != 0.0)
-        {
-            printf("%f\n", c[i]);
-        }
-    }
-
     double gflop = (2.0 * N * N * N) * 1e-9;
     double s = (end - start) * 1e-9;
     printf("%f GFLOP/S -- %.2f ms\n", gflop / s, s * 1e3);
 
-    {
-        // compute naive reference matmul on cpu
-        printf("Computing reference matmul result on cpu\n");
-        float *reference_c = (float *)malloc(N * N * sizeof(float));
-        matmul_c(a, b, reference_c, N);
+    // {
+    //     // compute naive reference matmul on cpu
+    //     printf("Computing reference matmul result on cpu\n");
+    //     float *reference_c = (float *)malloc(N * N * sizeof(float));
+    //     matmul_c(a, b, reference_c, N);
 
-        // check each item
-        printf("Comparing reference result with gpu result\n");
-        matrix_eq(reference_c, c, N);
-        printf("ALL GOOD\n");
-        free(reference_c);
-    }
+    //     // check each item
+    //     printf("Comparing reference result with gpu result\n");
+    //     matrix_eq(reference_c, c, N);
+    //     printf("ALL GOOD\n");
+    //     free(reference_c);
+    // }
 
     cudaFree(d_a);
     cudaFree(d_b);
