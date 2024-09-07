@@ -35,8 +35,8 @@ int main()
     float *c = (float *)malloc(N * N * sizeof(float));
 
     // fill a & b
-    matrix_random(a, N * N);
-    matrix_random(b, N * N);
+    matrix_random_fp16valued(a, N * N);
+    matrix_random_fp16valued(b, N * N);
 
     __half *a_h = (__half *)malloc(N * N * sizeof(__half));
     __half *b_h = (__half *)malloc(N * N * sizeof(__half));

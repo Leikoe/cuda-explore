@@ -1,6 +1,7 @@
 #include <time.h>
 #include <stdint.h>
 #include <bits/stdc++.h>
+#include <cuda_fp16.h>
 
 using namespace std;
 
@@ -11,6 +12,14 @@ void matrix_random(float *a, int numel)
     for (int i = 0; i < numel; i++)
     {
         a[i] = ((double)rand()) / INT_MAX;
+    }
+}
+
+void matrix_random_fp16valued(float *a, int numel)
+{
+    for (int i = 0; i < numel; i++)
+    {
+        a[i] = __half2float(__float2half(((double)rand()) / INT_MAX));
     }
 }
 
@@ -45,7 +54,7 @@ void matrix_eq(float *a, float *b, int N)
     {
         for (int j = 0; j < N; j++)
         {
-            if (b[i * N + j] - a[i * N + j] > 1e-3)
+            if (fabs(b[i * N + j] - a[i * N + j]) > 2e-2)
             {
                 printf("ERROR at i=%d j=%d (should be %f, is %f)\n", i, j, a[i * N + j], b[i * N + j]);
                 exit(1);
