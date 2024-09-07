@@ -5,7 +5,7 @@
 
 using namespace std;
 
-#define CEIL_DIV(a, b) ((a + b - 1) / b)
+#define CEIL_DIV(a, b) (((a) + (b - 1)) / (b))
 
 void matrix_random(float *a, int numel)
 {

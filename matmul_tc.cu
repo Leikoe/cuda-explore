@@ -3,7 +3,6 @@
 #include "utils.cu"
 
 #define N 1024
-#define WARP_SIZE 32
 #define TILE_SIZE 16
 
 __global__ void matmul(half *a, half *b, float *c, int n)
@@ -68,7 +67,7 @@ int main()
     cudaMemcpy(d_b, b_h, N * N * sizeof(half), cudaMemcpyHostToDevice);
 
     dim3 grid_dim(CEIL_DIV(N, TILE_SIZE), CEIL_DIV(N, TILE_SIZE));
-    dim3 block_dim(WARP_SIZE);
+    dim3 block_dim(warpSize);
     printf("LAUNCHING with grid_dim: (%d, %d) and block_dim: %d\n", grid_dim.x, grid_dim.y, block_dim.x);
 
     uint64_t start = nanos();
