@@ -6,7 +6,7 @@
 #define WARP_SIZE 32
 #define BLOCK_SIZE 32
 
-__global__ void matmul(__half *a, __half *b, __half *c, int n)
+__global__ void matmul(__half *a, __half *b, float *c, int n)
 {
     int block_i = blockIdx.y;                // block index along row (y) axis
     int block_j = blockIdx.x;                // block index along col (x) axis
@@ -24,7 +24,7 @@ __global__ void matmul(__half *a, __half *b, __half *c, int n)
     __shared__ __half tile_a[BLOCK_SIZE * BLOCK_SIZE];
     __shared__ __half tile_b[BLOCK_SIZE * BLOCK_SIZE];
 
-    __half acc = 0.0f;
+    float acc = 0.0f;
     for (int block_start_i = 0; block_start_i < n; block_start_i += BLOCK_SIZE)
     {
         tile_a[thread_i * BLOCK_SIZE + thread_j] = a[row * n + (block_start_i + thread_j)];
@@ -34,7 +34,7 @@ __global__ void matmul(__half *a, __half *b, __half *c, int n)
 
         for (int k = 0; k < BLOCK_SIZE; k++)
         {
-            acc = __hfma(tile_a[thread_i * BLOCK_SIZE + k], tile_b[k * BLOCK_SIZE + thread_j], acc);
+            acc += __half2float(tile_a[thread_i * BLOCK_SIZE + k] * tile_b[k * BLOCK_SIZE + thread_j]);
         }
 
         __syncthreads(); // we don't want to change the tiles in smem while some threads are still accumulating
@@ -51,26 +51,24 @@ int main()
     float *b = (float *)malloc(N * N * sizeof(float));
     float *c = (float *)malloc(N * N * sizeof(float));
 
+    // fill a & b
+    matrix_random(a, N * N);
+    matrix_random(b, N * N);
+
     __half *a_h = (__half *)malloc(N * N * sizeof(__half));
     __half *b_h = (__half *)malloc(N * N * sizeof(__half));
-    __half *c_h = (__half *)malloc(N * N * sizeof(__half));
-
-    __half *d_a, *d_b, *d_c;
-    cudaMalloc(&d_a, N * N * sizeof(__half));
-    cudaMalloc(&d_b, N * N * sizeof(__half));
-    cudaMalloc(&d_c, N * N * sizeof(__half));
-
-    // fill a & b and zero out c
-    matrix_random(a, N);
-    matrix_random(b, N);
-    matrix_zeros(c, N);
 
     for (int i = 0; i < N * N; i++)
     {
-        a_h[i] = __half2float(a[i]);
-        b_h[i] = __half2float(b[i]);
+        a_h[i] = __float2half(a[i]);
+        b_h[i] = __float2half(b[i]);
     }
 
+    __half *d_a, *d_b;
+    float *d_c;
+    cudaMalloc(&d_a, N * N * sizeof(__half));
+    cudaMalloc(&d_b, N * N * sizeof(__half));
+    cudaMalloc(&d_c, N * N * sizeof(float));
     cudaMemcpy(d_a, a_h, N * N * sizeof(__half), cudaMemcpyHostToDevice);
     cudaMemcpy(d_b, b_h, N * N * sizeof(__half), cudaMemcpyHostToDevice);
 
@@ -83,11 +81,7 @@ int main()
     cudaDeviceSynchronize();
     uint64_t end = nanos();
 
-    cudaMemcpy(c_h, d_c, N * N * sizeof(__half), cudaMemcpyDeviceToHost);
-    for (int i = 0; i < N * N; i++)
-    {
-        c[i] = __half2float(c_h[i]);
-    }
+    cudaMemcpy(c, d_c, N * N * sizeof(float), cudaMemcpyDeviceToHost);
 
     double gflop = (2.0 * N * N * N) * 1e-9;
     double s = (end - start) * 1e-9;
@@ -111,7 +105,6 @@ int main()
     cudaFree(d_c);
     free(a_h);
     free(b_h);
-    free(c_h);
     free(a);
     free(b);
     free(c);
