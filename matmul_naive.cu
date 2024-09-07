@@ -2,22 +2,12 @@
 #include <time.h>
 #include <stdint.h>
 #include <assert.h>
-#include <bits/stdc++.h>
-
-using namespace std;
-
-
-uint64_t nanos()
-{
-    struct timespec start;
-    clock_gettime(CLOCK_MONOTONIC_RAW, &start);
-    return (uint64_t)start.tv_sec * 1000000000 + (uint64_t)start.tv_nsec;
-}
+#include <cuda_fp16.h>
+#include "utils.cu"
 
 #define N 1024
-#define CEIL_DIV(a, b) ((a + b - 1) / b)
 
-__global__ void matmul(float *a, float *b, float *c, int n)
+__global__ void matmul(__half *a, __half *b, __half *c, int n)
 {
     int thread_id_x = blockIdx.x * blockDim.x + threadIdx.x;
     int thread_id_y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -27,15 +17,12 @@ __global__ void matmul(float *a, float *b, float *c, int n)
         return;
     }
 
-    float acc = 0.0f;
+    __half acc = 0.0f;
     for (int k = 0; k < n; k++)
     {
-        assert((thread_id_y * n + k) < (n*n));  // check out of bounds
-        assert((k * n + thread_id_x) < (n*n));  // check out of bounds
-        acc += a[thread_id_y * n + k] * b[k * n + thread_id_x];
+        acc = __hfma(a[thread_id_y * n + k], b[k * n + thread_id_x], acc);
     }
 
-    assert((thread_id_y * n + thread_id_x) < (n*n));  // check out of bounds
     c[thread_id_y * n + thread_id_x] = acc;
 }
 
@@ -47,21 +34,28 @@ int main()
     float *b = (float *)malloc(N * N * sizeof(float));
     float *c = (float *)malloc(N * N * sizeof(float));
 
-    float *d_a, *d_b, *d_c;
-    cudaMalloc(&d_a, N * N * sizeof(float));
-    cudaMalloc(&d_b, N * N * sizeof(float));
-    cudaMalloc(&d_c, N * N * sizeof(float));
+    __half *a_h = (__half *)malloc(N * N * sizeof(__half));
+    __half *b_h = (__half *)malloc(N * N * sizeof(__half));
+    __half *c_h = (__half *)malloc(N * N * sizeof(__half));
+
+    __half *d_a, *d_b, *d_c;
+    cudaMalloc(&d_a, N * N * sizeof(__half));
+    cudaMalloc(&d_b, N * N * sizeof(__half));
+    cudaMalloc(&d_c, N * N * sizeof(__half));
 
     // fill a & b and zero out c
-    for (int i = 0; i < (N * N); i++)
+    matrix_random(a, N);
+    matrix_random(b, N);
+    matrix_zeros(c, N);
+
+    for (int i = 0; i < N * N; i++)
     {
-        a[i] = ((double)rand()) / INT_MAX;
-        b[i] = ((double)rand()) / INT_MAX;
-        c[i] = 0.0f;
+        a_h[i] = __half2float(a[i]);
+        b_h[i] = __half2float(b[i]);
     }
 
-    cudaMemcpy(d_a, a, N * N * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_b, b, N * N * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_a, a_h, N * N * sizeof(__half), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_b, b_h, N * N * sizeof(__half), cudaMemcpyHostToDevice);
 
     dim3 block_dim(16, 16);
     dim3 grid_dim(CEIL_DIV(N, block_dim.x), CEIL_DIV(N, block_dim.y));
@@ -72,7 +66,11 @@ int main()
     cudaDeviceSynchronize();
     uint64_t end = nanos();
 
-    cudaMemcpy(c, d_c, N * N * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(c_h, d_c, N * N * sizeof(__half), cudaMemcpyDeviceToHost);
+    for (int i = 0; i < N * N; i++)
+    {
+        c[i] = __half2float(c_h[i]);
+    }
 
     double gflop = (2.0 * N * N * N) * 1e-9;
     double s = (end - start) * 1e-9;
@@ -82,39 +80,21 @@ int main()
         // compute naive reference matmul on cpu
         printf("Computing reference matmul result on cpu\n");
         float *reference_c = (float *)malloc(N * N * sizeof(float));
-        for (int i = 0; i < N; i++)
-        {
-            for (int j = 0; j < N; j++)
-            {
-                float acc = 0.0f;
-                for (int k = 0; k < N; k++)
-                {
-                    acc += a[i * N + k] * b[k * N + j];
-                }
-                reference_c[i * N + j] = acc;
-            }
-        }
+        matmul_c(a, b, reference_c, N);
 
         // check each item
         printf("Comparing reference result with gpu result\n");
-        for (int i = 0; i < N; i++)
-        {
-            for (int j = 0; j < N; j++)
-            {
-                if (reference_c[i * N + j] - c[i * N + j] > 1e-3)
-                {
-                    printf("ERROR at i=%d j=%d (should be %f, is %f)\n", i, j, reference_c[i * N + j], c[i * N + j]);
-                    exit(1);
-                }
-            }
-        }
-        free(reference_c);
+        matrix_eq(reference_c, c, N);
         printf("ALL GOOD\n");
+        free(reference_c);
     }
 
     cudaFree(d_a);
     cudaFree(d_b);
     cudaFree(d_c);
+    free(a_h);
+    free(b_h);
+    free(c_h);
     free(a);
     free(b);
     free(c);

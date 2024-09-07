@@ -4,23 +4,26 @@
 
 using namespace std;
 
+#define CEIL_DIV(a, b) ((a + b - 1) / b)
 
-#define CEIL_DIV(a,b) ((a+b-1)/b)
-
-
-void matrix_random(float *a, int numel) {
-    for (int i = 0; i < numel; i++) {
+void matrix_random(float *a, int numel)
+{
+    for (int i = 0; i < numel; i++)
+    {
         a[i] = ((double)rand()) / INT_MAX;
     }
 }
 
-void matrix_zeros(float *a, int numel) {
-    for (int i = 0; i < numel; i++) {
+void matrix_zeros(float *a, int numel)
+{
+    for (int i = 0; i < numel; i++)
+    {
         a[i] = 0.0;
     }
 }
 
-void matmul_c(float *a, float *b, float *c, int N) {
+void matmul_c(float *a, float *b, float *c, int N)
+{
     for (int i = 0; i < N; i++)
     {
 
@@ -36,7 +39,8 @@ void matmul_c(float *a, float *b, float *c, int N) {
     }
 }
 
-void matrix_eq(float *a, float *b, int N) {
+void matrix_eq(float *a, float *b, int N)
+{
     for (int i = 0; i < N; i++)
     {
         for (int j = 0; j < N; j++)
@@ -50,17 +54,17 @@ void matrix_eq(float *a, float *b, int N) {
     }
 }
 
-
 // from https://github.com/siboehm/SGEMM_CUDA/blob/master/src/runner.cu#L24
-void CudaDeviceInfo() {
-  int deviceId;
+void CudaDeviceInfo()
+{
+    int deviceId;
 
-  cudaGetDevice(&deviceId);
+    cudaGetDevice(&deviceId);
 
-  cudaDeviceProp props{};
-  cudaGetDeviceProperties(&props, deviceId);
+    cudaDeviceProp props{};
+    cudaGetDeviceProperties(&props, deviceId);
 
-  printf("Device ID: %d\n\
+    printf("Device ID: %d\n\
     Name: %s\n\
     Compute Capability: %d.%d\n\
     memoryBusWidth: %d\n\
@@ -74,14 +78,13 @@ void CudaDeviceInfo() {
     totalConstMem: %zuKB\n\
     multiProcessorCount: %d\n\
     Warp Size: %d\n",
-         deviceId, props.name, props.major, props.minor, props.memoryBusWidth,
-         props.maxThreadsPerBlock, props.maxThreadsPerMultiProcessor,
-         props.regsPerBlock, props.regsPerMultiprocessor,
-         props.totalGlobalMem / 1024 / 1024, props.sharedMemPerBlock / 1024,
-         props.sharedMemPerMultiprocessor / 1024, props.totalConstMem / 1024,
-         props.multiProcessorCount, props.warpSize);
+           deviceId, props.name, props.major, props.minor, props.memoryBusWidth,
+           props.maxThreadsPerBlock, props.maxThreadsPerMultiProcessor,
+           props.regsPerBlock, props.regsPerMultiprocessor,
+           props.totalGlobalMem / 1024 / 1024, props.sharedMemPerBlock / 1024,
+           props.sharedMemPerMultiprocessor / 1024, props.totalConstMem / 1024,
+           props.multiProcessorCount, props.warpSize);
 };
-
 
 uint64_t nanos()
 {
