@@ -2,11 +2,11 @@
 #include <stdio.h>
 #include "utils.cu"
 
-#define N 4096
+#define N 1024
 #define WARP_SIZE 32
 #define TILE_SIZE 16
 
-__global__ void matmul(__half *a, __half *b, float *c, int n)
+__global__ void matmul(half *a, half *b, float *c, int n)
 {
     int block_i = blockIdx.y; // block index along row (y) axis
     int block_j = blockIdx.x; // block index along col (x) axis
@@ -21,8 +21,8 @@ __global__ void matmul(__half *a, __half *b, float *c, int n)
     //     return;
     // }
 
-    nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, TILE_SIZE, TILE_SIZE, TILE_SIZE, __half, nvcuda::wmma::row_major> a_frag;
-    nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, TILE_SIZE, TILE_SIZE, TILE_SIZE, __half, nvcuda::wmma::row_major> b_frag;
+    nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, TILE_SIZE, TILE_SIZE, TILE_SIZE, half, nvcuda::wmma::row_major> a_frag;
+    nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, TILE_SIZE, TILE_SIZE, TILE_SIZE, half, nvcuda::wmma::row_major> b_frag;
     nvcuda::wmma::fragment<nvcuda::wmma::accumulator, TILE_SIZE, TILE_SIZE, TILE_SIZE, float> acc_frag;
 
     nvcuda::wmma::fill_fragment(acc_frag, 0.0);
@@ -50,8 +50,8 @@ int main()
     matrix_random_fp16valued(a, N * N);
     matrix_random_fp16valued(b, N * N);
 
-    __half *a_h = (__half *)malloc(N * N * sizeof(__half));
-    __half *b_h = (__half *)malloc(N * N * sizeof(__half));
+    half *a_h = (half *)malloc(N * N * sizeof(half));
+    half *b_h = (half *)malloc(N * N * sizeof(half));
 
     for (int i = 0; i < N * N; i++)
     {
@@ -59,13 +59,13 @@ int main()
         b_h[i] = __float2half(b[i]);
     }
 
-    __half *d_a, *d_b;
+    half *d_a, *d_b;
     float *d_c;
-    cudaMalloc(&d_a, N * N * sizeof(__half));
-    cudaMalloc(&d_b, N * N * sizeof(__half));
+    cudaMalloc(&d_a, N * N * sizeof(half));
+    cudaMalloc(&d_b, N * N * sizeof(half));
     cudaMalloc(&d_c, N * N * sizeof(float));
-    cudaMemcpy(d_a, a_h, N * N * sizeof(__half), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_b, b_h, N * N * sizeof(__half), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_a, a_h, N * N * sizeof(half), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_b, b_h, N * N * sizeof(half), cudaMemcpyHostToDevice);
 
     dim3 grid_dim(CEIL_DIV(N, TILE_SIZE), CEIL_DIV(N, TILE_SIZE));
     dim3 block_dim(WARP_SIZE);
@@ -82,18 +82,18 @@ int main()
     double s = (end - start) * 1e-9;
     printf("%f GFLOP/S -- %.2f ms\n", gflop / s, s * 1e3);
 
-    // {
-    //     // compute naive reference matmul on cpu
-    //     printf("Computing reference matmul result on cpu\n");
-    //     float *reference_c = (float *)malloc(N * N * sizeof(float));
-    //     matmul_c(a, b, reference_c, N);
+    {
+        // compute naive reference matmul on cpu
+        printf("Computing reference matmul result on cpu\n");
+        float *reference_c = (float *)malloc(N * N * sizeof(float));
+        matmul_c(a, b, reference_c, N);
 
-    //     // check each item
-    //     printf("Comparing reference result with gpu result\n");
-    //     matrix_eq(reference_c, c, N);
-    //     printf("ALL GOOD\n");
-    //     free(reference_c);
-    // }
+        // check each item
+        printf("Comparing reference result with gpu result\n");
+        matrix_eq(reference_c, c, N);
+        printf("ALL GOOD\n");
+        free(reference_c);
+    }
 
     cudaFree(d_a);
     cudaFree(d_b);
