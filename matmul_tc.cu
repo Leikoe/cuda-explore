@@ -6,20 +6,10 @@
 #define TILE_SIZE 16
 #define WARP_SIZE 32
 
-__global__ void matmul(half *a, half *b, float *c, int n)
+__global__ void matmul(half *a, half *b, float *c)
 {
     int block_i = blockIdx.y; // block index along row (y) axis
     int block_j = blockIdx.x; // block index along col (x) axis
-    // int thread_i = threadIdx.x / BLOCK_SIZE; // thread item y index inside the 32x32 block
-    // int thread_j = threadIdx.x % BLOCK_SIZE; // thread item x index inside the 32x32 block
-
-    // int row = block_i * BLOCK_SIZE + thread_i;
-    // int col = block_j * BLOCK_SIZE + thread_j;
-
-    // if (row >= n or col >= n)
-    // {
-    //     return;
-    // }
 
     nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, TILE_SIZE, TILE_SIZE, TILE_SIZE, half, nvcuda::wmma::row_major> a_frag;
     nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, TILE_SIZE, TILE_SIZE, TILE_SIZE, half, nvcuda::wmma::row_major> b_frag;
@@ -29,13 +19,13 @@ __global__ void matmul(half *a, half *b, float *c, int n)
 #pragma unroll
     for (int wmma_block_index = 0; wmma_block_index < N / TILE_SIZE; wmma_block_index++)
     {
-        nvcuda::wmma::load_matrix_sync(a_frag, a + (block_i * TILE_SIZE * n) + (wmma_block_index * TILE_SIZE), n);
-        nvcuda::wmma::load_matrix_sync(b_frag, b + (wmma_block_index * TILE_SIZE * n) + (block_j * TILE_SIZE), n);
+        nvcuda::wmma::load_matrix_sync(a_frag, a + (block_i * TILE_SIZE * N) + (wmma_block_index * TILE_SIZE), N);
+        nvcuda::wmma::load_matrix_sync(b_frag, b + (wmma_block_index * TILE_SIZE * N) + (block_j * TILE_SIZE), N);
 
         nvcuda::wmma::mma_sync(acc_frag, a_frag, b_frag, acc_frag);
     }
 
-    nvcuda::wmma::store_matrix_sync(c + (block_i * TILE_SIZE * n) + (block_j * TILE_SIZE), acc_frag, n, nvcuda::wmma::mem_row_major);
+    nvcuda::wmma::store_matrix_sync(c + (block_i * TILE_SIZE * N) + (block_j * TILE_SIZE), acc_frag, N, nvcuda::wmma::mem_row_major);
 }
 
 int main()
@@ -72,7 +62,7 @@ int main()
     printf("LAUNCHING with grid_dim: (%d, %d) and block_dim: %d\n", grid_dim.x, grid_dim.y, block_dim.x);
 
     uint64_t start = nanos();
-    matmul<<<grid_dim, block_dim>>>(d_a, d_b, d_c, N);
+    matmul<<<grid_dim, block_dim>>>(d_a, d_b, d_c);
     cudaDeviceSynchronize();
     uint64_t end = nanos();
 
